@@ -1,0 +1,50 @@
+; CLW file contains information for the MFC ClassWizard
+
+[General Info]
+Version=1
+LastClass=CTestPixelProjectDlg
+LastTemplate=CDialog
+NewFileInclude1=#include "stdafx.h"
+NewFileInclude2=#include "TestPixelProject.h"
+
+ClassCount=2
+Class1=CTestPixelProjectApp
+Class2=CTestPixelProjectDlg
+
+ResourceCount=4
+Resource2=IDR_MAINFRAME
+Resource3=IDD_TESTPIXELPROJECT_DIALOG
+Resource4=IDD_TESTPIXELPROJECT_DIALOG (English (U.S.))
+
+[CLS:CTestPixelProjectApp]
+Type=0
+HeaderFile=TestPixelProject.h
+ImplementationFile=TestPixelProject.cpp
+Filter=N
+
+[CLS:CTestPixelProjectDlg]
+Type=0
+HeaderFile=TestPixelProjectDlg.h
+ImplementationFile=TestPixelProjectDlg.cpp
+Filter=D
+BaseClass=CDialog
+VirtualFilter=dWC
+LastObject=IDC_LIST1
+
+
+
+[DLG:IDD_TESTPIXELPROJECT_DIALOG]
+Type=1
+ControlCount=3
+Control1=IDOK,button,1342242817
+Control2=IDCANCEL,button,1342242816
+Control3=IDC_STATIC,static,1342308352
+Class=CTestPixelProjectDlg
+
+[DLG:IDD_TESTPIXELPROJECT_DIALOG (English (U.S.))]
+Type=1
+Class=CTestPixelProjectDlg
+ControlCount=2
+Control1=IDC_LIST1,listbox,1352728833
+Control2=IDC_EDIT1,edit,1350631552
+

@@ -1,0 +1,55 @@
+# Visual Studio / MFC project ignores
+
+# Build output
+[Dd]ebug/
+[Rr]elease/
+[Rr]elease_*/
+x64/
+x86/
+Win32/
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.idb
+*.pch
+*.res
+*.tlog/
+*.lastbuildstate
+*.unsuccessfulbuild
+
+# Visual Studio cache / IDE state
+.vs/
+*.suo
+*.opt
+*.ncb
+*.aps
+*.plg
+*.sdf
+*.opensdf
+*.ipch
+*.user
+*.vcxproj.user
+*.vcproj.*.user
+ipch/
+
+# Resource compiler temporaries
+*.ResourceCompile.cache
+*.RC.tlh
+*.RC.tli
+
+# Project upgrade / VS Backup
+[Bb]ackup/
+UpgradeLog.htm
+UpgradeLog*.XML
+_UpgradeReport_Files/
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
