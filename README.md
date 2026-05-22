@@ -2,9 +2,8 @@
 
 A Windows desktop pixel-monitoring tool, written in **Visual C++ / MFC** (originally authored 2012–2013, VC6 era, later upgraded to a modern Visual Studio solution).
 
-
-![ScanPixels Demo](https://appzone.cloud/storage/pages/processing/HcTlgbkTfhxsoaY7vRmNn1PLU480X10huluceEFw.gif)
-
+![ScanPixels Demo](demo.gif)
+ 
 
 The solution is made of **two cooperating applications** that talk to each other over a broadcast Windows message:
 
