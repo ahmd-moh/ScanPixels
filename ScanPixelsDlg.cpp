@@ -15,30 +15,26 @@ static char THIS_FILE[] = __FILE__;
 
 namespace {
 
-// Offsets from the dialog's screen origin to the top-left of the scan frame.
-// Account for the window non-client area + frame's position inside the dialog.
-const int kCaptureOffsetX = 132;
-const int kCaptureOffsetY = 12;
-
-// Scan walk starts a few pixels in from the frame edge to avoid the border.
-const int kScanStartX = 5;
-const int kScanStartY = 5;
-
 // Status flag indicators ("LED" rectangles) painted on the dialog.
 const int kFlagW = 28;
 const int kFlagH = 8;
 
-// Default values for the speed/action timers (milliseconds).
+// Default timer values (milliseconds).
 const int kDefaultScanSpeedMs = 10;
 const int kDefaultActionMs    = 1;
 
 // Spin control range cap.
 const int kSpinMax = 100000;
 
-// Error-state values used by m_ErrorDetected.
-const int kErrorNone     = 0;  // pixels match
-const int kErrorFresh    = 1;  // pixels differ this tick
-const int kErrorReported = 2;  // mismatch already broadcast
+// Default overlay size on first launch.
+const int kDefaultOverlayW = 144;
+const int kDefaultOverlayH = 122;
+
+// Broadcast state codes (kept compatible with prior listeners).
+const int kBroadcastClean         = 0;
+const int kBroadcastError         = 1;
+const int kBroadcastShapeChange   = 2;  // dHash detected an image-level shape change
+const int kBroadcastShapeRestored = 3;  // dHash matches the reference again
 
 }  // namespace
 
@@ -96,18 +92,11 @@ CScanPixelsDlg::CScanPixelsDlg(CWnd* pParent /*=NULL*/)
 	, m_unTimerSpeed(kDefaultScanSpeedMs)
 	, m_unTimerAction(kDefaultActionMs)
 	, m_bContinues(false)
-	, m_nySrc(0)
-	, m_nxSrc(0)
-	, m_lpszClassName(NULL)
-	, m_hWndFrame(NULL)
-	, m_ErrorDetected(kErrorNone)
 	, m_MsgPixelScan(0)
-	, m_bCaptured(false)
-	, m_bHoleStarted(false)
-	, m_nScanX(kScanStartX)
-	, m_nScanY(kScanStartY)
-	, m_bSendOnRise(true)
-	, m_bSendOnFall(true)
+	, m_pendingState(kBroadcastClean)
+	, m_pendingX(0)
+	, m_pendingY(0)
+	, m_bActionPending(false)
 {
 	//{{AFX_DATA_INIT(CScanPixelsDlg)
 		// NOTE: the ClassWizard will add member initialization here
@@ -115,10 +104,6 @@ CScanPixelsDlg::CScanPixelsDlg(CWnd* pParent /*=NULL*/)
 	// Note that LoadIcon does not require a subsequent DestroyIcon in Win32
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_MsgPixelScan = ::RegisterWindowMessage(_T("WHM_SCANPXL"));
-
-	for (int i = 0; i < kErrorMapSize; ++i)
-		for (int j = 0; j < kErrorMapSize; ++j)
-			m_Error[i][j] = 0;
 }
 
 void CScanPixelsDlg::DoDataExchange(CDataExchange* pDX)
@@ -126,6 +111,7 @@ void CScanPixelsDlg::DoDataExchange(CDataExchange* pDX)
 	CDialog::DoDataExchange(pDX);
 	//{{AFX_DATA_MAP(CScanPixelsDlg)
 	DDX_Control(pDX, IDC_CHECK_REALTIME, m_chIsRealTime);
+	DDX_Control(pDX, IDC_CHECK_IGNORETEXT, m_chIgnoreText);
 	DDX_Control(pDX, IDC_SPIN_ACTIONSET, m_SpinAction);
 	DDX_Control(pDX, IDC_SPIN_SPEED, m_SpinSpeed);
 	//}}AFX_DATA_MAP
@@ -137,51 +123,19 @@ BEGIN_MESSAGE_MAP(CScanPixelsDlg, CDialog)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_BN_CLICKED(IDC_BUTTON_START, OnButtonStart)
-	ON_WM_MOVE()
 	ON_WM_TIMER()
 	ON_NOTIFY(UDN_DELTAPOS, IDC_SPIN_SPEED, OnDeltaposSpinSpeed)
 	ON_NOTIFY(UDN_DELTAPOS, IDC_SPIN_ACTIONSET, OnDeltaposSpinActionset)
+	ON_BN_CLICKED(IDC_CHECK_IGNORETEXT, OnCheckIgnoreText)
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
 // CScanPixelsDlg message handlers
 
-void CScanPixelsDlg::CreateHole(CRgn& rgn)
-{
-	CRect WindowRect;
-	GetWindowRect(WindowRect);
-
-	CRgn WindowRgn;
-	WindowRgn.CreateRectRgn(0, 0, WindowRect.Width(), WindowRect.Height());
-
-	// ThisRgn accumulates all hole regions across calls to this function.
-	static CRgn ThisRgn;
-
-	if (!m_bHoleStarted)
-	{
-		ThisRgn.DeleteObject();
-		ThisRgn.CreateRectRgn(0, 0, 0, 0);
-		ThisRgn.CopyRgn(&rgn);
-		m_bHoleStarted = true;
-	}
-	else
-	{
-		ThisRgn.CombineRgn(&ThisRgn, &rgn, RGN_OR);
-	}
-
-	CRgn HoleRgn;
-	HoleRgn.CreateRectRgn(0, 0, 0, 0);
-	HoleRgn.CombineRgn(&ThisRgn, &WindowRgn, RGN_XOR);
-	SetWindowRgn((HRGN)HoleRgn.m_hObject, TRUE);
-}
-
 BOOL CScanPixelsDlg::OnInitDialog()
 {
 	CDialog::OnInitDialog();
-
-	m_lpszClassName = AfxRegisterWndClass(CS_HREDRAW | CS_VREDRAW,
-		NULL, CreateSolidBrush(RGB(0, 0, 0)), NULL);
 
 	// IDM_ABOUTBOX must be in the system command range.
 	ASSERT((IDM_ABOUTBOX & 0xFFF0) == IDM_ABOUTBOX);
@@ -204,20 +158,15 @@ BOOL CScanPixelsDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// Set big icon
 	SetIcon(m_hIcon, FALSE);		// Set small icon
 
-	CRect rct;
-	GetDlgItem(IDC_STATIC_FLAMEPIXELS)->GetClientRect(&rct);
-
-	HWND hWndDlg = GetDlgItem(IDC_STATIC_FLAMEPIXELS)->m_hWnd;
-
-	CRgn rgn;
-	rgn.CreateRectRgn(140, 40, rct.right + 10, rct.bottom + 32);
-	CreateHole(rgn);
-
-	m_hWndFrame = CreateWindowEx(WS_EX_CONTROLPARENT, m_lpszClassName,
-		_T(""), WS_VISIBLE | WS_CHILD,
-		0, 0, 120, 120, hWndDlg, NULL, NULL, NULL);
-
-	GetDlgItem(IDC_STATIC_FLAMEPIXELS)->GetClientRect(m_rctClientFrame);
+	// Position the green target overlay near the centre of the primary monitor.
+	int sw = ::GetSystemMetrics(SM_CXSCREEN);
+	int sh = ::GetSystemMetrics(SM_CYSCREEN);
+	CRect overlay(
+		(sw - kDefaultOverlayW) / 2,
+		(sh - kDefaultOverlayH) / 2,
+		(sw + kDefaultOverlayW) / 2,
+		(sh + kDefaultOverlayH) / 2);
+	m_overlay.Create(overlay, this);
 
 	m_bContinues = false;
 
@@ -285,53 +234,6 @@ HCURSOR CScanPixelsDlg::OnQueryDragIcon()
 	return (HCURSOR) m_hIcon;
 }
 
-void CScanPixelsDlg::CaptureWnd(CWnd* wnd, HWND hwndClientArea, BOOL FullWnd)
-{
-	CWnd* pWndClientTo = CWnd::FromHandle(hwndClientArea);
-	if (pWndClientTo == NULL || wnd == NULL)
-		return;
-
-	CClientDC ClientDC(pWndClientTo);
-
-	CDC dc;
-	if (FullWnd)
-	{
-		HDC hdc = ::GetWindowDC(wnd->m_hWnd);
-		dc.Attach(hdc);
-	}
-	else
-	{
-		HDC hdc = ::GetDC(wnd->m_hWnd);
-		dc.Attach(hdc);
-	}
-
-	CDC memDC;
-	memDC.CreateCompatibleDC(&ClientDC);
-
-	CRect r;
-	if (FullWnd)
-		pWndClientTo->GetWindowRect(&r);
-	else
-		pWndClientTo->GetClientRect(&r);
-
-	CSize sz(r.Width(), r.Height());
-
-	CBitmap bm;
-	bm.CreateCompatibleBitmap(&dc, sz.cx, sz.cy);
-
-	CBitmap* oldbm = memDC.SelectObject(&bm);
-
-	ClientDC.BitBlt(0, 0, sz.cx, sz.cy,
-		&dc,
-		m_nxSrc + kCaptureOffsetX,
-		m_nySrc + kCaptureOffsetY,
-		SRCCOPY);
-
-	memDC.SelectObject(oldbm);
-
-	bm.Detach();  // make sure bitmap not deleted with CBitmap object
-}
-
 void CScanPixelsDlg::OnButtonStart()
 {
 	if (m_bContinues)
@@ -340,27 +242,27 @@ void CScanPixelsDlg::OnButtonStart()
 		KillTimer(TIMER_SCAN);
 		KillTimer(TIMER_ACTIONSET);
 		m_bContinues = false;
+		m_bActionPending = false;
+		m_overlay.SetLocked(false);
 		SetDlgItemText(IDC_BUTTON_START, _T("Start Monitor"));
 
 		GetDlgItem(IDC_SPIN_SPEED)->EnableWindow(TRUE);
 		GetDlgItem(IDC_EDIT1)->EnableWindow(TRUE);
 		GetDlgItem(IDC_EDIT2)->EnableWindow(TRUE);
 		GetDlgItem(IDC_CHECK_REALTIME)->EnableWindow(TRUE);
+		GetDlgItem(IDC_CHECK_IGNORETEXT)->EnableWindow(TRUE);
 		GetDlgItem(IDC_SPIN_ACTIONSET)->EnableWindow(TRUE);
 		return;
 	}
 
-	// Currently stopped -> take a fresh snapshot and start scanning.
-	CaptureWnd(GetDesktopWindow(), m_hWndFrame, TRUE);
-	m_bCaptured = true;
-
-	m_ErrorDetected = kErrorNone;
-	m_nScanX = kScanStartX;
-	m_nScanY = kScanStartY;
-	m_bSendOnRise = true;
-	m_bSendOnFall = true;
+	// Currently stopped -> snapshot whatever is under the overlay and start.
+	m_engine.SetIgnoreText(m_chIgnoreText.GetCheck() == BST_CHECKED);
+	m_engine.CaptureReference(m_overlay.GetScreenRect());
+	m_overlay.SetLocked(true);
+	DrawFlagState(true);
 
 	m_bContinues = true;
+	m_bActionPending = false;
 	SetDlgItemText(IDC_BUTTON_START, _T("Stop Monitor"));
 	SetTimer(TIMER_SCAN, m_unTimerSpeed, NULL);
 
@@ -368,72 +270,79 @@ void CScanPixelsDlg::OnButtonStart()
 	GetDlgItem(IDC_EDIT1)->EnableWindow(FALSE);
 	GetDlgItem(IDC_EDIT2)->EnableWindow(FALSE);
 	GetDlgItem(IDC_CHECK_REALTIME)->EnableWindow(FALSE);
+	// Locked during a scan: the ignore-text mode is baked into the engine at
+	// CaptureReference time (it allocates learning buffers + seeds prev-luma).
+	// Toggling mid-scan would mutate m_ignoreText against half-initialised
+	// state, so the checkbox is frozen until Stop.
+	GetDlgItem(IDC_CHECK_IGNORETEXT)->EnableWindow(FALSE);
 	GetDlgItem(IDC_SPIN_ACTIONSET)->EnableWindow(FALSE);
 }
 
-void CScanPixelsDlg::OnMove(int x, int y)
+void CScanPixelsDlg::OnTimer(UINT nIDEvent)
 {
-	CDialog::OnMove(x, y);
-
-	m_nxSrc = x;
-	m_nySrc = y;
-}
-
-BOOL CScanPixelsDlg::ComparePixels(int nX, int nY)
-{
-	if (nX < 0 || nX >= kErrorMapSize || nY < 0 || nY >= kErrorMapSize)
-		return FALSE;
-
-	BOOL bDiffers = FALSE;
-
-	CClientDC ddcFrame   (GetDlgItem(IDC_STATIC_FLAMEPIXELS));
-	CClientDC ddcDesktop (GetDesktopWindow());
-	CClientDC dflag      (GetDlgItem(IDC_STATIC_FLAG));
-	CClientDC dflagDetect(GetDlgItem(IDC_STATIC_FLAG3));
-
-	const COLORREF cFrame   = ddcFrame.GetPixel(nX, nY);
-	const COLORREF cLive    = ddcDesktop.GetPixel(
-		(m_nxSrc + kCaptureOffsetX) + nX,
-		(m_nySrc + kCaptureOffsetY) + nY);
-
-	if (cFrame == cLive)
+	if (nIDEvent == TIMER_SCAN)
 	{
-		dflag.FillSolidRect(1, 1, kFlagW, kFlagH, RGB(244, 0, 0));
+		CPixelEngine::StepResult r = m_engine.Step(m_overlay.GetScreenRect());
 
-		if (m_Error[nX][nY] == (nX + nY))
+		// Flag follows whichever channel is actually broadcasting: per-pixel
+		// when Ignore-text is OFF, the shape (bulk-percent) channel when ON.
+		// Otherwise a stuck per-pixel state would leave the flag red after
+		// the watched region had already returned to matching the reference.
+		const bool ignoreText = (m_chIgnoreText.GetCheck() == BST_CHECKED);
+		const bool clean = ignoreText
+			? (r.shapeState == 0)
+			: (r.state == CPixelEngine::kClean);
+		DrawFlagMatch(clean);
+		DrawFlagWorking(r.rowWrapped);
+		DrawFlagState(clean);
+
+		// When "Ignore small/text changes" is checked, the per-pixel detector
+		// is silent and only the shape channel (below) speaks. This trades
+		// per-pixel precision for immunity to small/text-sized changes.
+		if (!ignoreText && r.edge != CPixelEngine::kEdgeNone)
 		{
-			m_ErrorDetected = kErrorNone;
-			m_Error[nX][nY] = 0;
+			m_pendingState = clean ? kBroadcastClean : kBroadcastError;
+			m_pendingX = r.x;
+			m_pendingY = r.y;
+			m_bActionPending = true;
+			SetTimer(TIMER_ACTIONSET, m_unTimerAction, NULL);
+		}
+
+		// Parallel dHash channel. If both fire on the same tick, the shape
+		// event wins the broadcast — that's the higher-level signal.
+		if (r.shapeEdge != CPixelEngine::kEdgeNone)
+		{
+			m_pendingState = (r.shapeEdge == CPixelEngine::kEdgeRising)
+				? kBroadcastShapeChange
+				: kBroadcastShapeRestored;
+			m_pendingX = r.x;
+			m_pendingY = r.y;
+			m_bActionPending = true;
+			SetTimer(TIMER_ACTIONSET, m_unTimerAction, NULL);
 		}
 	}
-	else
+	else if (nIDEvent == TIMER_ACTIONSET)
 	{
-		dflag.FillSolidRect(1, 1, kFlagW, kFlagH, RGB(0, 0, 0));
-		m_Error[nX][nY] = (nX + nY);
-		m_ErrorDetected = kErrorFresh;
-		bDiffers = TRUE;
+		if (m_bActionPending)
+		{
+			::PostMessage(HWND_BROADCAST, m_MsgPixelScan,
+				MAKELONG(m_unIDClient, m_pendingState),
+				MAKELONG(m_pendingX, m_pendingY));
+			m_bActionPending = false;
+		}
+
+		if (!m_chIsRealTime.GetCheck())
+			KillTimer(TIMER_ACTIONSET);
 	}
 
-	dflagDetect.FillSolidRect(1, 1, kFlagW, kFlagH,
-		m_ErrorDetected == kErrorNone ? RGB(24, 244, 24) : RGB(242, 23, 23));
+	CDialog::OnTimer(nIDEvent);
+}
 
-	// Schedule a broadcast on the rising edge of an error...
-	if (m_ErrorDetected == kErrorFresh && m_bSendOnRise)
-	{
-		SetTimer(TIMER_ACTIONSET, m_unTimerAction, NULL);
-		m_bSendOnRise = false;
-		m_bSendOnFall = true;
-	}
-
-	// ...and on the falling edge (back to OK).
-	if (m_ErrorDetected == kErrorNone && m_bSendOnFall)
-	{
-		SetTimer(TIMER_ACTIONSET, m_unTimerAction, NULL);
-		m_bSendOnRise = true;
-		m_bSendOnFall = false;
-	}
-
-	return bDiffers;
+void CScanPixelsDlg::DrawFlagMatch(bool bMatch)
+{
+	CClientDC ddc(GetDlgItem(IDC_STATIC_FLAG));
+	ddc.FillSolidRect(1, 1, kFlagW, kFlagH,
+		bMatch ? RGB(244, 0, 0) : RGB(0, 0, 0));
 }
 
 void CScanPixelsDlg::DrawFlagWorking(bool bSet)
@@ -443,69 +352,49 @@ void CScanPixelsDlg::DrawFlagWorking(bool bSet)
 		bSet ? RGB(244, 0, 0) : RGB(244, 244, 0));
 }
 
-void CScanPixelsDlg::OnTimer(UINT nIDEvent)
+void CScanPixelsDlg::DrawFlagState(bool bClean)
 {
-	if (m_ErrorDetected == kErrorFresh)
-	{
-		m_nScanX = kScanStartX;
-		m_nScanY = kScanStartY;
-		m_ErrorDetected = kErrorReported;
-	}
-
-	// Walk the scan area in a row-major sweep so every pixel is sampled,
-	// not only the diagonal.
-	m_nScanX++;
-	if (m_nScanX >= m_rctClientFrame.Width() / 2)
-	{
-		m_nScanX = kScanStartX;
-		m_nScanY++;
-		DrawFlagWorking(true);
-
-		if (m_nScanY >= m_rctClientFrame.Height())
-			m_nScanY = kScanStartY;
-	}
-	else
-	{
-		DrawFlagWorking(false);
-	}
-
-	ComparePixels(m_nScanX, m_nScanY);
-
-	if (nIDEvent == TIMER_ACTIONSET && m_ErrorDetected != kErrorReported)
-	{
-		::PostMessage(HWND_BROADCAST, m_MsgPixelScan,
-			MAKELONG(m_unIDClient, m_ErrorDetected),
-			MAKELONG(m_nScanX, m_nScanY));
-
-		if (!m_chIsRealTime.GetCheck())
-			KillTimer(TIMER_ACTIONSET);
-	}
-
-	CDialog::OnTimer(nIDEvent);
+	CClientDC ddc(GetDlgItem(IDC_STATIC_FLAG3));
+	ddc.FillSolidRect(1, 1, kFlagW, kFlagH,
+		bClean ? RGB(24, 244, 24) : RGB(242, 23, 23));
 }
 
 void CScanPixelsDlg::OnDeltaposSpinSpeed(NMHDR* pNMHDR, LRESULT* pResult)
 {
 	NM_UPDOWN* pNMUpDown = (NM_UPDOWN*)pNMHDR;
 
+	// UDN_DELTAPOS fires before the change; iPos is current, iDelta is pending.
+	int newPos = pNMUpDown->iPos + pNMUpDown->iDelta;
+	if (newPos < 0)         newPos = 0;
+	if (newPos > kSpinMax)  newPos = kSpinMax;
+
 	CString strSpeed;
-	strSpeed.Format(_T("%d"), pNMUpDown->iPos);
+	strSpeed.Format(_T("%d"), newPos);
 	SetDlgItemText(IDC_EDIT2, strSpeed);
 
-	m_unTimerSpeed = pNMUpDown->iPos;
+	m_unTimerSpeed = newPos;
 
 	*pResult = 0;
+}
+
+void CScanPixelsDlg::OnCheckIgnoreText()
+{
+	m_engine.SetIgnoreText(m_chIgnoreText.GetCheck() == BST_CHECKED);
 }
 
 void CScanPixelsDlg::OnDeltaposSpinActionset(NMHDR* pNMHDR, LRESULT* pResult)
 {
 	NM_UPDOWN* pNMUpDown = (NM_UPDOWN*)pNMHDR;
 
+	int newPos = pNMUpDown->iPos + pNMUpDown->iDelta;
+	if (newPos < 0)         newPos = 0;
+	if (newPos > kSpinMax)  newPos = kSpinMax;
+
 	CString strSpeed;
-	strSpeed.Format(_T("%d"), pNMUpDown->iPos);
+	strSpeed.Format(_T("%d"), newPos);
 	SetDlgItemText(IDC_EDIT1, strSpeed);
 
-	m_unTimerAction = pNMUpDown->iPos;
+	m_unTimerAction = newPos;
 
 	*pResult = 0;
 }
