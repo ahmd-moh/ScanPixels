@@ -143,21 +143,25 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="PixelEngine.cpp" />
     <ClCompile Include="ScanPixels.cpp" />
     <ClCompile Include="ScanPixelsDlg.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="TargetOverlay.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ScanPixels.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="PixelEngine.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="ScanPixels.h" />
     <ClInclude Include="ScanPixelsDlg.h" />
     <ClInclude Include="StdAfx.h" />
+    <ClInclude Include="TargetOverlay.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="res\default1.bin" />
