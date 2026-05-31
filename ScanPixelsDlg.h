@@ -8,9 +8,6 @@
 #pragma once
 #endif // _MSC_VER > 1000
 
-#include "PixelEngine.h"
-#include "TargetOverlay.h"
-
 /////////////////////////////////////////////////////////////////////////////
 // CScanPixelsDlg dialog
 
@@ -21,18 +18,18 @@ class CScanPixelsDlg : public CDialog
 {
 // Construction
 public:
-	UINT m_unIDClient;
-	int  m_unTimerSpeed;
-	int  m_unTimerAction;
-	bool m_bContinues;
-
+	UINT    m_unIDClient;
+	int     m_unTimerSpeed;
+	int     m_unTimerAction;
+	bool    m_bContinues;
+	int     m_nySrc;
+	int     m_nxSrc;
 	CScanPixelsDlg(CWnd* pParent = NULL);	// standard constructor
 
 // Dialog Data
 	//{{AFX_DATA(CScanPixelsDlg)
 	enum { IDD = IDD_SCANPIXELS_DIALOG };
-	CButton	        m_chIsRealTime;
-	CButton	        m_chIgnoreText;
+	CButton	m_chIsRealTime;
 	CSpinButtonCtrl	m_SpinAction;
 	CSpinButtonCtrl	m_SpinSpeed;
 	//}}AFX_DATA
@@ -46,21 +43,28 @@ public:
 
 // Implementation
 protected:
-	HICON   m_hIcon;
+	enum { kErrorMapSize = 120 };
+
+	HICON       m_hIcon;
+	void        CreateHole(CRgn& rgn);
+	CRect       m_rctClientFrame;
+	const char* m_lpszClassName;
+	HWND        m_hWndFrame;
+	void        CaptureWnd(CWnd* wnd, HWND hwndClientArea, BOOL FullWnd);
+	BOOL        ComparePixels(int nX, int nY);
+	void        DrawFlagWorking(bool bSet);
+
+	int     m_Error[kErrorMapSize][kErrorMapSize];
+	int     m_ErrorDetected;
 	UINT    m_MsgPixelScan;
 	CString m_strTextString;
 
-	CTargetOverlay m_overlay;
-	CPixelEngine   m_engine;
-
-	int  m_pendingState;
-	int  m_pendingX;
-	int  m_pendingY;
-	bool m_bActionPending;
-
-	void DrawFlagMatch(bool bMatch);     // FLAG  : current pixel matches?
-	void DrawFlagWorking(bool bSet);     // FLAG2 : row wrap pulse
-	void DrawFlagState(bool bClean);     // FLAG3 : overall clean/error
+	bool    m_bCaptured;
+	bool    m_bHoleStarted;
+	int     m_nScanX;
+	int     m_nScanY;
+	bool    m_bSendOnRise;
+	bool    m_bSendOnFall;
 
 	// Generated message map functions
 	//{{AFX_MSG(CScanPixelsDlg)
@@ -69,10 +73,10 @@ protected:
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
 	afx_msg void OnButtonStart();
+	afx_msg void OnMove(int x, int y);
 	afx_msg void OnTimer(UINT nIDEvent);
 	afx_msg void OnDeltaposSpinSpeed(NMHDR* pNMHDR, LRESULT* pResult);
 	afx_msg void OnDeltaposSpinActionset(NMHDR* pNMHDR, LRESULT* pResult);
-	afx_msg void OnCheckIgnoreText();
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 };

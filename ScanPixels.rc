@@ -39,18 +39,14 @@ BEGIN
 END
 
 IDD_SCANPIXELS_DIALOG DIALOGEX 0, 0, 272, 52
-STYLE DS_SYSMODAL | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION |
+STYLE DS_SYSMODAL | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | 
     WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
-CAPTION "Scan Pixels"
+CAPTION "Scan Pixels 2012"
 FONT 8, "MS Sans Serif"
 BEGIN
-    LTEXT           "Target: drag the green rectangle on screen.",
-                    IDC_STATIC,9,11,160,10
-    LTEXT           "Border = move, corners = resize.",
-                    IDC_STATIC,9,24,160,10
-    CONTROL         "Ignore small/text changes",IDC_CHECK_IGNORETEXT,
-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,9,35,160,9
+    CONTROL         "",IDC_STATIC_FLAMEPIXELS,"Static",SS_WHITERECT | 
+                    SS_SUNKEN,7,7,160,36
     PUSHBUTTON      "Start Monitor",IDC_BUTTON_START,211,30,55,18
     CONTROL         "",IDC_STATIC_FLAG,"Static",SS_BLACKFRAME,9,44,20,6
     CONTROL         "",IDC_STATIC_FLAG2,"Static",SS_BLACKFRAME,31,44,20,6
@@ -58,10 +54,10 @@ BEGIN
     CONTROL         "Spin1",IDC_SPIN_ACTIONSET,"msctls_updown32",
                     UDS_ARROWKEYS,170,27,9,13
     EDITTEXT        IDC_EDIT1,179,27,30,12,ES_AUTOHSCROLL | ES_READONLY
-    CONTROL         "Spin1",IDC_SPIN_SPEED,"msctls_updown32",UDS_ARROWKEYS |
+    CONTROL         "Spin1",IDC_SPIN_SPEED,"msctls_updown32",UDS_ARROWKEYS | 
                     UDS_NOTHOUSANDS,170,15,9,13
     EDITTEXT        IDC_EDIT2,179,15,30,12,ES_AUTOHSCROLL | ES_READONLY
-    CONTROL         "Realtime?",IDC_CHECK_REALTIME,"Button",BS_AUTOCHECKBOX |
+    CONTROL         "Realtime?",IDC_CHECK_REALTIME,"Button",BS_AUTOCHECKBOX | 
                     WS_TABSTOP,216,19,44,9
     LTEXT           "Speed Scan/Actionset(secc.)",IDC_STATIC,171,3,94,12,
                     SS_CENTERIMAGE
